@@ -1,0 +1,40 @@
+# Node
+node_modules
+npm-debug.log*
+
+# Next.js Build-Output (wird im Image frisch gebaut)
+.next
+out
+
+# Prisma-generierter Client (wird im Image frisch generiert)
+prisma/generated
+
+# Env-Dateien – dürfen nie ins Image gebacken werden (Secrets)
+.env
+.env.local
+.env.*.local
+
+# Git
+.git
+.gitignore
+
+# Lokale, zur Laufzeit erzeugte Uploads/Rechnungen (kommen über Docker
+# Volumes, siehe docker-compose.yml – nicht Teil des Images)
+public/uploads
+public/invoices
+
+# Editor/OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Dokumentation/Sonstiges (nicht laufzeitrelevant)
+docs
+README.md
+
+# Docker selbst (Rebuild-Loop vermeiden)
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml

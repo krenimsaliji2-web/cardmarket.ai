@@ -1,0 +1,108 @@
+# Project Atlas – Reverse-Proxy-Server-Blöcke (Feature 86).
+#
+# ${DOMAIN} wird beim Container-Start automatisch durch die gleichnamige
+# Umgebungsvariable ersetzt (offizieller nginx:alpine-Envsubst-Mechanismus
+# für Dateien unter /etc/nginx/templates/, siehe docker-compose.yml – kein
+# Hardcode der Domain im Repository, siehe README "HTTPS").
+
+upstream app_backend {
+  server app:3000;
+}
+
+upstream realtime_backend {
+  server app:3001;
+}
+
+# Für WebSocket-Upgrades im generischen "/"-Location-Block (Next.js' eigenes
+# HMR nutzt das im Dev-Betrieb; schadet in Produktion nicht und hält den
+# Block generisch für zukünftige Next.js-Funktionen).
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      close;
+}
+
+# HTTP: ACME-Challenge (Let's Encrypt) bleibt immer über Klartext-HTTP
+# erreichbar, alles andere wird auf HTTPS umgeleitet.
+server {
+  listen 80;
+  server_name ${DOMAIN};
+
+  location /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+  }
+
+  location / {
+    return 301 https://$host$request_uri;
+  }
+}
+
+server {
+  listen 443 ssl;
+  http2 on;
+  server_name ${DOMAIN};
+
+  # Pfade entsprechen exakt der Struktur, die certbot selbst anlegt
+  # (/etc/letsencrypt/live/<domain>/...) – der nginx-Container legt beim
+  # allerersten Start ein selbstsigniertes Platzhalter-Zertifikat exakt
+  # hierhin, falls noch keines existiert (siehe nginx/docker-entrypoint-wrapper.sh),
+  # damit `docker compose up -d` sofort funktioniert, auch bevor ein
+  # echtes Let's-Encrypt-Zertifikat bezogen wurde. Siehe README "HTTPS"
+  # für den Ablauf, ein echtes Zertifikat zu beziehen (ersetzt danach
+  # automatisch dieselben Dateien, keine Konfigurationsänderung nötig).
+  ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_ciphers HIGH:!aNULL:!MD5;
+  ssl_prefer_server_ciphers on;
+  ssl_session_cache shared:SSL:10m;
+  ssl_session_timeout 10m;
+
+  # Security Header
+  add_header X-Frame-Options "SAMEORIGIN" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+  add_header X-XSS-Protection "1; mode=block" always;
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+  location /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+  }
+
+  # Realtime-WebSocket-Server (services/realtime/server.ts, eigener Prozess/
+  # Port im app-Container, siehe docker/entrypoint.sh). Eigener Pfad-Präfix,
+  # damit Standard-HTTP-Requests klar vom WebSocket-Upgrade getrennt bleiben.
+  location /realtime/ {
+    proxy_pass http://realtime_backend/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 3600s;
+  }
+
+  # Statische Next.js-Build-Assets: unveränderliche, hash-basierte Dateinamen
+  # (siehe .next/static) – aggressives Caching unbedenklich.
+  location /_next/static/ {
+    proxy_pass http://app_backend;
+    proxy_set_header Host $host;
+    add_header Cache-Control "public, max-age=31536000, immutable";
+  }
+
+  # Nutzer-Uploads/Rechnungen laufen über die eigenen Route Handler
+  # (app/uploads/listings/[filename]/route.ts, app/invoices/[filename]/route.ts
+  # – siehe dortige Kommentare) und damit über denselben Proxy-Pfad wie
+  # der Rest der App; kein gesonderter Location-Block nötig.
+  location / {
+    proxy_pass http://app_backend;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+  }
+}

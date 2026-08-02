@@ -1,0 +1,923 @@
+// Prisma Schema für Project Atlas
+// Doku: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "./generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Better Auth
+//
+// Basis-Modelle (User, Session, Account, Verification) mit
+// `npx @better-auth/cli generate` erzeugt. Die Better-Auth-Kernfelder in
+// User/Session/Account/Verification dürfen nicht umbenannt oder entfernt
+// werden. Siehe docs/12_AUTHENTICATION.md und lib/auth/README.md.
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  USER
+
+  @@map("role")
+}
+
+model User {
+  // Better-Auth-Kernfelder
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
+
+  // Project-Atlas-Marketplace-Felder
+  username    String    @unique
+  displayName String?
+  role        Role      @default(USER)
+  country     String?
+  language    String?
+  currency    String?
+  timezone    String?
+  banned      Boolean   @default(false)
+  deletedAt   DateTime? @db.Timestamptz(3)
+
+  // Relationen (Better Auth)
+  sessions Session[]
+  accounts Account[]
+
+  // Relationen (Marketplace)
+  sellerProfile SellerProfile?
+  cart          Cart?
+  orders        Order[]
+  reviews       Review[]
+  collection    Collection?
+  wishlist      Wishlist?
+  notifications Notification[]
+  reports       Report[]
+  conversationsAsBuyer Conversation[]
+  sentMessages         Message[]
+  sellerFollows        SellerFollow[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime @db.Timestamptz(3)
+  token     String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime? @db.Timestamptz(3)
+  refreshTokenExpiresAt DateTime? @db.Timestamptz(3)
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ---------------------------------------------------------------------------
+// Trading Card Database
+//
+// Zentrale, herstellerseitige Kartendatenbank (Stammdaten). Nutzer legen
+// keine eigenen Karten an, sondern verweisen später (Listings, Sammlungen)
+// auf diese Datensätze. Hierarchie: Game → Set → Card.
+// Siehe docs/34_CARD_DATABASE.md und docs/07_DATABASE_SCHEMA.md.
+// ---------------------------------------------------------------------------
+
+model Game {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  logo      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  sets  Set[]
+  cards Card[]
+
+  @@map("game")
+}
+
+model Set {
+  id     String @id @default(cuid())
+  gameId String
+  game   Game   @relation(fields: [gameId], references: [id], onDelete: Restrict)
+
+  name        String
+  slug        String
+  code        String
+  releaseDate DateTime @db.Date
+  totalCards  Int
+  symbolImage String
+  // Optional statt Pflichtfeld (Feature 37/Catalog-Foundation): neu über
+  // createSet() angelegte Sets aus einem künftigen Import haben zum
+  // Anlegezeitpunkt noch kein Cover-Bild.
+  coverImage  String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  cards Card[]
+
+  @@unique([gameId, slug])
+  @@unique([gameId, code])
+  @@map("set")
+}
+
+model Card {
+  id     String @id @default(cuid())
+  gameId String
+  game   Game   @relation(fields: [gameId], references: [id], onDelete: Restrict)
+  setId  String
+  set    Set    @relation(fields: [setId], references: [id], onDelete: Restrict)
+
+  name        String
+  cardNumber  String
+  rarity      String
+  language    String
+  image       String
+  artist      String
+  cardType    String
+  hp          Int?
+  evolvesFrom String?
+  description String?
+
+  // Neu für die Catalog-Foundation (Feature 37) – bewusst zusätzlich zu
+  // cardType/language statt diese zu ersetzen, um bestehenden Code/Daten
+  // nicht zu brechen. types/subtypes/supertype folgen der Terminologie der
+  // Pokémon TCG API (types/subtypes als Array, supertype als grobe
+  // Kategorie), attributes ist ein generischer Json-Container für
+  // spielspezifische Zusatzdaten (Yu-Gi-Oh!/Magic haben andere Attribute
+  // als Pokémon) – noch ungenutzt, bis ein späteres Feature echte Daten
+  // importiert.
+  types      String[] @default([])
+  subtypes   String[] @default([])
+  supertype  String?
+  attributes Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  listings        Listing[]
+  priceHistory    PriceHistory[]
+  collectionItems CollectionItem[]
+  wishlistItems   WishlistItem[]
+
+  @@unique([setId, cardNumber, language])
+  @@index([gameId])
+  @@index([name])
+  @@index([rarity])
+  @@index([language])
+  @@map("card")
+}
+
+// ---------------------------------------------------------------------------
+// Seller Profile
+//
+// Grundlage, damit ein User (Role.USER) zusätzlich als Verkäufer auftreten
+// kann, ohne dass "Verkäufer" eine exklusive Rolle ist (siehe Diskussion zum
+// Role-Enum). 1:1 zu User über den unique userId-Fremdschlüssel: ein User
+// kann höchstens ein SellerProfile besitzen.
+// ---------------------------------------------------------------------------
+
+model SellerProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  displayName String
+  bio         String?
+  avatar      String?
+  country     String
+  verified    Boolean @default(false)
+
+  // ---------------------------------------------------------------------
+  // Feature 50 – Erweiterte Verkäuferprofile
+  //
+  // "Profilbild" (aus dem Ticket) entspricht dem bereits bestehenden Feld
+  // `avatar` – bewusst kein doppeltes Feld angelegt. "Mitglied seit" nutzt
+  // das bereits bestehende `createdAt`, "Verifizierungsbadge" das bereits
+  // bestehende `verified` – beide ebenfalls ohne neues Feld.
+  //
+  // `bio` bleibt unverändert (weiterhin von app/seller/new/ verwendet);
+  // `shortDescription`/`longDescription` sind bewusst zusätzliche, neue
+  // Felder statt einer Umbenennung von `bio`, um die bestehende
+  // Registrierungs-Flow nicht anzufassen.
+  //
+  // `followerCount` (Feature 50, reine Foundation, immer 0) wurde in
+  // Feature 53 wieder ENTFERNT: services/follow/getFollowerCount.ts
+  // berechnet die echte Anzahl jetzt live über SellerFollow.count() statt
+  // über ein nie geschriebenes, dauerhaft veraltetes Zähler-Feld – zwei
+  // Quellen für dieselbe Zahl (ein totes Feld + ein echter Count) hätten
+  // sonst dauerhaft auseinanderlaufen können.
+  // ---------------------------------------------------------------------
+  bannerImage       String?
+  shortDescription  String?
+  longDescription   String?
+  companyName       String?
+  website           String?
+  instagramUrl      String?
+  facebookUrl       String?
+  youtubeUrl        String?
+  discordUrl        String?
+  location          String?
+  shippingCountries String[] @default([])
+  shippingTime      String?
+  responseTime      String?
+  shopRules         String?
+  returnPolicy      String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  listings      Listing[]
+  orderItems    OrderItem[]
+  reviews       Review[]
+  conversations Conversation[]
+  followedBy    SellerFollow[]
+
+  @@map("seller_profile")
+}
+
+// ---------------------------------------------------------------------------
+// Listing
+//
+// Ein konkretes Verkaufsangebot eines Sellers für eine bestimmte Karte
+// (inkl. Zustand/Sprache/Foil/Signiert des jeweiligen physischen Exemplars).
+// ---------------------------------------------------------------------------
+
+model Listing {
+  id String @id @default(cuid())
+
+  sellerId String
+  seller   SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  cardId   String
+  card     Card          @relation(fields: [cardId], references: [id], onDelete: Restrict)
+
+  price       Decimal @db.Decimal(10, 2)
+  quantity    Int
+  language    String
+  condition   String
+  isFoil      Boolean @default(false)
+  isSigned    Boolean @default(false)
+  description String?
+  isActive    Boolean @default(true)
+
+  // Feature 72 – Advanced Marketplace Search & Filters. Freitext statt Enum
+  // (anders als condition/language): TCG-Editionen/Grading-Bezeichnungen
+  // haben keine app-weit feste, endliche Werteliste wie CONDITIONS/LANGUAGES.
+  /// Druckvariante des physischen Exemplars, z. B. "1st Edition", "Unlimited", "Shadowless".
+  edition        String?
+  /// Eigenständiges Flag statt Teil von `edition` – Käufer filtern gezielt danach (siehe Ticket).
+  isFirstEdition Boolean @default(false)
+  /// Grading-Unternehmen + Note, z. B. "PSA 10", "BGS 9.5". Kein Wert = ungraded.
+  grading        String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  images        ListingImage[]
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  conversations Conversation[]
+
+  @@index([sellerId])
+  @@index([cardId])
+  @@index([price])
+  @@index([condition])
+  @@index([isActive])
+  @@map("listing")
+}
+
+// ---------------------------------------------------------------------------
+// Listing Image
+//
+// Fotos des jeweiligen physischen Exemplars (nicht zu verwechseln mit
+// Card.image, dem generischen Kartenbild aus der Card Database). sortOrder
+// steuert die Anzeigereihenfolge (z. B. Hauptbild zuerst).
+// ---------------------------------------------------------------------------
+
+model ListingImage {
+  id String @id @default(cuid())
+
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  url       String
+  sortOrder Int     @default(0)
+  /** Genau ein Bild pro Listing ist Hauptbild (Anwendungslogik, siehe services/listing/images.ts) – bewusst als eigenes Feld statt implizit über sortOrder === 0, da "Hauptbild setzen" unabhängig von der Anzeigereihenfolge möglich sein muss. */
+  isPrimary Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([listingId])
+  @@index([sortOrder])
+  @@map("listing_image")
+}
+
+// ---------------------------------------------------------------------------
+// Cart (Warenkorb)
+//
+// Kein Checkout, keine Bezahlung – reine Ablage von Listings vor dem Kauf.
+// 1:1 zu User (ein Warenkorb pro User), 1:n zu CartItem. Ein Listing kann
+// höchstens einmal pro Warenkorb vorkommen (@@unique auf cartId+listingId).
+// ---------------------------------------------------------------------------
+
+model Cart {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  items CartItem[]
+
+  @@map("cart")
+}
+
+model CartItem {
+  id String @id @default(cuid())
+
+  cartId    String
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Restrict)
+
+  quantity Int
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([cartId, listingId])
+  @@index([listingId])
+  @@map("cart_item")
+}
+
+// ---------------------------------------------------------------------------
+// Order (Bestellung) – Foundation
+//
+// Wird ausschließlich vom Stripe-Webhook (checkout.session.completed)
+// angelegt, siehe services/orders/createOrder.ts. OrderItem speichert die
+// Listing-/Card-/Seller-Daten als unveränderlichen Snapshot zum
+// Kaufzeitpunkt (eigene Spalten statt nur Fremdschlüssel), damit spätere
+// Änderungen oder Löschungen an Listing/Card/SellerProfile die
+// Bestellhistorie nicht verfälschen. onDelete: Restrict auf User/Listing/
+// SellerProfile bewusst abweichend von Cart (Cascade) – eine Order ist ein
+// dauerhafter Beleg, kein Session-Datensatz, und darf nicht durch das
+// Löschen der verknüpften Entität verschwinden.
+//
+// Bewusst noch NICHT Teil dieser Foundation: Bestandsreduktion,
+// Deaktivierung von Listings, E-Mail-Versand, Rechnungen, Order-Status.
+// ---------------------------------------------------------------------------
+
+model Order {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  // Verknüpfung zur Stripe Checkout Session – macht createOrder() idempotent
+  // gegenüber mehrfach zugestellten Webhook-Events (Stripe liefert
+  // "at least once").
+  stripeCheckoutSessionId String @unique
+
+  totalPrice Decimal @db.Decimal(10, 2)
+  currency   String
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  items   OrderItem[]
+  reviews Review[]
+
+  @@index([userId])
+  @@map("order")
+}
+
+enum ShippingCarrier {
+  SWISS_POST
+  DHL
+  UPS
+  FEDEX
+  DPD
+  GLS
+  OTHER
+
+  @@map("shipping_carrier")
+}
+
+model OrderItem {
+  id String @id @default(cuid())
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  listingId String
+  listing   Listing       @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  sellerId  String
+  seller    SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+
+  // Snapshot der Listing-/Card-/Seller-Daten zum Kaufzeitpunkt (siehe
+  // Kommentar oben) – bewusst redundant zu Listing/Card/SellerProfile.
+  cardName   String
+  cardImage  String?
+  sellerName String
+  price      Decimal @db.Decimal(10, 2)
+  quantity   Int
+  subtotal   Decimal @db.Decimal(10, 2)
+  language   String
+  condition  String
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  // ---------------------------------------------------------------------
+  // Feature 52 – Versand & Tracking
+  //
+  // Bewusst auf OrderItem statt auf Order (obwohl das Ticket wörtlich
+  // "Order erweitern" verlangt): eine Order kann Positionen mehrerer
+  // Verkäufer enthalten (siehe getSellerOrders.ts, das OrderItems gezielt
+  // nach sellerId filtert, und Review.sellerId, das exakt aus demselben
+  // Grund pro Order+Verkäufer statt global auf Order sitzt). Versand ist
+  // eine Handlung EINES Verkäufers für SEINE Positionen – Felder auf
+  // Order würden bei einer Multi-Verkäufer-Bestellung entweder die Daten
+  // verschiedener Verkäufer vermischen oder "Nur Verkäufer darf
+  // Versanddaten ändern" (Sicherheitsanforderung) unmöglich sauber
+  // durchsetzen lassen (welcher der mehreren Verkäufer wäre autorisiert?).
+  // Felder/Namen aus dem Ticket bleiben exakt erhalten, nur die Ebene
+  // wechselt – siehe Zusammenfassung/Architekturentscheidungen.
+  // ---------------------------------------------------------------------
+  shippingCarrier ShippingCarrier?
+  trackingNumber  String?
+  trackingUrl     String?
+  shippedAt       DateTime?        @db.Timestamptz(3)
+  deliveredAt     DateTime?        @db.Timestamptz(3)
+
+  @@index([orderId])
+  @@index([listingId])
+  @@map("order_item")
+}
+
+// ---------------------------------------------------------------------------
+// Review (Verkäuferbewertung)
+//
+// Ein Käufer kann pro Bestellung jeden darin vorkommenden Verkäufer genau
+// einmal bewerten (@@unique auf orderId+sellerId+buyerId) – bei erneutem
+// Einreichen wird die bestehende Bewertung aktualisiert statt dupliziert
+// (siehe services/reviews/createReview.ts, dort per upsert()).
+// rating (1–5) und comment (max. 1000 Zeichen) werden bewusst nur
+// anwendungsseitig validiert (services/reviews/createReview.ts), kein
+// DB-CHECK-Constraint – konsistent mit dem Rest des Projekts, das
+// Feldregeln durchgehend in Services/Validation statt im Schema prüft.
+// onDelete: Cascade auf Order (Reviews gehören zu einer Bestellung, wie
+// OrderItem), Restrict auf SellerProfile/User (wie Order.userId/
+// OrderItem.sellerId – dauerhafte Datensätze, kein versehentliches
+// Verschwinden durch Löschung der verknüpften Entität).
+// ---------------------------------------------------------------------------
+
+model Review {
+  id String @id @default(cuid())
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  sellerId String
+  seller   SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+
+  buyerId String
+  buyer   User   @relation(fields: [buyerId], references: [id], onDelete: Restrict)
+
+  rating  Int
+  comment String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([orderId, sellerId, buyerId])
+  @@index([sellerId])
+  @@index([buyerId])
+  @@map("review")
+}
+
+// ---------------------------------------------------------------------------
+// PriceHistory (Preisverlauf) – Foundation
+//
+// Jede Zeile repräsentiert GENAU einen realen Verkauf (eine OrderItem-
+// Position), angelegt automatisch von services/prices/recordSalePrice.ts,
+// aufgerufen aus services/orders/createOrder.ts nach erfolgreichem
+// Order-Anlegen (rein additiv, siehe dort – analog zu updateInventory()/
+// createInvoice() aus Feature 30/35). Bei einem einzelnen Verkauf sind
+// averagePrice/lowestPrice/highestPrice identisch (= der tatsächliche
+// Verkaufspreis dieser Position); die Aggregat-benannten Spalten sind
+// bewusst so gewählt, damit spätere periodische Aggregat-Snapshots
+// (anderer `source`-Wert, z. B. ein Cron-Job) dieselbe Tabelle nutzen
+// können, ohne Migration. calculateMarketPrice() aggregiert über mehrere
+// Zeilen hinweg (Durchschnitt/Min/Max/Median je Zeitraum).
+//
+// onDelete: Restrict auf Card – Preishistorie ist ein dauerhafter Beleg,
+// unabhängig davon, ob die Karte je gelöscht werden könnte (aktuell nicht
+// möglich, siehe bestehende Restrict-Ketten von Listing/OrderItem).
+// ---------------------------------------------------------------------------
+
+model PriceHistory {
+  id String @id @default(cuid())
+
+  cardId String
+  card   Card   @relation(fields: [cardId], references: [id], onDelete: Restrict)
+
+  currency     String
+  averagePrice Decimal @db.Decimal(10, 2)
+  lowestPrice  Decimal @db.Decimal(10, 2)
+  highestPrice Decimal @db.Decimal(10, 2)
+  soldCount    Int
+  source       String
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([cardId])
+  @@index([createdAt])
+  @@index([cardId, createdAt])
+  @@map("price_history")
+}
+
+// ---------------------------------------------------------------------------
+// Collection (Sammlung) – Foundation
+//
+// Vollständig unabhängig vom Marketplace: ein User kann Karten besitzen,
+// ohne sie zu verkaufen (kein Listing nötig). Collection/CollectionItem
+// referenzieren ausschließlich Card, NICHT Listing – Listings und
+// Collection dürfen laut Anforderung niemals voneinander abhängen.
+//
+// 1:1 zu User (wie Cart), 1:n zu CollectionItem (wie Cart/CartItem). Ein
+// User besitzt genau eine Collection, wird bei Bedarf lazy angelegt (siehe
+// services/collection/getCollection.ts, getOrCreateCollection()).
+//
+// @@unique auf (collectionId, cardId, language, condition, foil): dieselbe
+// Karten-"Variante" (gleiche Karte + Sprache + Zustand + Foil) existiert
+// pro Sammlung nur einmal – addToCollection() erhöht sonst die Menge
+// (siehe dort), statt eine zweite Zeile anzulegen.
+//
+// onDelete: Cascade auf User (wie Cart – persönliche, nicht-finanzielle
+// Daten), Restrict auf Card (Sammlungseinträge dürfen keine Karte
+// referenzieren, die verschwindet).
+// ---------------------------------------------------------------------------
+
+model Collection {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  items CollectionItem[]
+
+  @@map("collection")
+}
+
+model CollectionItem {
+  id String @id @default(cuid())
+
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  cardId       String
+  card         Card       @relation(fields: [cardId], references: [id], onDelete: Restrict)
+
+  quantity Int
+  language String
+  condition String
+  foil     Boolean @default(false)
+
+  // Rein informativ, vom User gepflegt – NICHT die Quelle für den
+  // Sammlungswert (der kommt live über getCurrentMarketPrice() aus
+  // Feature 39, siehe calculateCollectionValue.ts).
+  purchasePrice  Decimal? @db.Decimal(10, 2)
+  estimatedValue Decimal? @db.Decimal(10, 2)
+  notes          String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([collectionId, cardId, language, condition, foil])
+  @@index([collectionId])
+  @@index([cardId])
+  @@map("collection_item")
+}
+
+// ---------------------------------------------------------------------------
+// Wishlist (Wunschliste) – Foundation
+//
+// Vollständig unabhängig von Collection/Marketplace: eine Karte auf der
+// Wunschliste bedeutet nur "möchte ich haben", kein Besitz, kein Listing.
+// Anders als CollectionItem hat WishlistItem KEIN quantity-Feld – eine
+// Variante steht entweder auf der Liste oder nicht (addToWishlist() ist
+// daher idempotent statt eine Menge zu erhöhen, siehe
+// services/wishlist/addToWishlist.ts).
+//
+// 1:1 zu User, 1:n zu WishlistItem (gleiches Muster wie Collection/
+// CollectionItem). @@unique auf (wishlistId, cardId, language, condition,
+// foil) verhindert doppelte Zeilen für dieselbe Karten-Variante.
+//
+// Noch KEINE Benachrichtigungen/Preisalarm-Logik – targetPrice wird nur
+// gespeichert und angezeigt (Differenz zum aktuellen Marktpreis), es
+// passiert nichts automatisch beim Erreichen des Zielpreises.
+//
+// onDelete: Cascade auf User (wie Cart/Collection), Restrict auf Card.
+// ---------------------------------------------------------------------------
+
+model Wishlist {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  items WishlistItem[]
+
+  @@map("wishlist")
+}
+
+model WishlistItem {
+  id String @id @default(cuid())
+
+  wishlistId String
+  wishlist   Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  cardId     String
+  card       Card     @relation(fields: [cardId], references: [id], onDelete: Restrict)
+
+  language  String
+  condition String
+  foil      Boolean @default(false)
+
+  targetPrice Decimal? @db.Decimal(10, 2)
+  notes       String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([wishlistId, cardId, language, condition, foil])
+  @@index([wishlistId])
+  @@index([cardId])
+  @@map("wishlist_item")
+}
+
+// ---------------------------------------------------------------------------
+// Notification (Benachrichtigung) – In-App-Benachrichtigungssystem Foundation
+//
+// Zentrale Tabelle, über die zukünftige Features (Orders, Reviews, Price
+// Alerts, ...) In-App-Benachrichtigungen erzeugen können sollen (via
+// services/notifications/createNotification.ts). In DIESEM Feature wird
+// bewusst NICHTS automatisch angebunden – reine Foundation.
+//
+// Noch KEINE E-Mails/Push, noch keine Echtzeit (kein WebSocket/Polling) –
+// rein clientseitig beim Laden der Seite abgerufen.
+//
+// onDelete: Cascade auf User (persönliche, nicht-finanzielle Daten,
+// gleiches Muster wie Cart/Collection/Wishlist).
+// ---------------------------------------------------------------------------
+
+enum NotificationType {
+  ORDER
+  REVIEW
+  PRICE_ALERT
+  SYSTEM
+  ADMIN
+  MESSAGE
+
+  @@map("notification_type")
+}
+
+model Notification {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type    NotificationType
+  title   String
+  message String
+  link    String?
+  isRead  Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([isRead])
+  @@map("notification")
+}
+
+// ---------------------------------------------------------------------------
+// Report (Meldung) – Reports & Moderation Foundation
+//
+// Erlaubt jedem eingeloggten Benutzer, ein Listing, eine Review oder einen
+// anderen Benutzer zu melden (services/reports/createReport.ts). targetId
+// ist bewusst KEIN Fremdschlüssel/Relation, sondern eine reine ID-Referenz
+// ohne referenzielle Integrität – welche Tabelle targetId meint, ergibt
+// sich erst aus `type` (LISTING/REVIEW/USER). Eine echte FK-Relation wäre
+// hier ohnehin nicht möglich, da targetId je nach type auf drei
+// verschiedene Tabellen zeigen kann (polymorphe Referenz).
+//
+// In DIESEM Feature wird bewusst NICHTS automatisch angebunden – keine
+// Melde-Buttons auf Listings/Reviews/Profilen, keine automatische
+// Benachrichtigung, keine automatische Moderation. Reine Foundation, auf
+// der spätere Features via createReport() aufsetzen sollen.
+//
+// onDelete: Restrict auf User (Reporter) – eine Meldung ist ein
+// dauerhafter Beleg/Audit-Trail (gleiches Muster wie Review.buyerId),
+// unabhängig davon, ob Nutzer-Löschung je möglich wird.
+// ---------------------------------------------------------------------------
+
+enum ReportType {
+  LISTING
+  REVIEW
+  USER
+
+  @@map("report_type")
+}
+
+enum ReportStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  REJECTED
+
+  @@map("report_status")
+}
+
+model Report {
+  id String @id @default(cuid())
+
+  reporterId String
+  reporter   User   @relation(fields: [reporterId], references: [id], onDelete: Restrict)
+
+  type        ReportType
+  targetId    String
+  reason      String
+  description String?
+
+  status ReportStatus @default(OPEN)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+  @@index([reporterId])
+  @@map("report")
+}
+
+// ---------------------------------------------------------------------------
+// Conversation / Message – Direktnachrichten (Marketplace Chat)
+//
+// Ein Chat ist pro (buyerId, sellerId)-Paar eindeutig – unabhängig davon,
+// über welches Listing er ursprünglich gestartet wurde. Ein Klick auf
+// "Nachricht senden" auf einer Listing-Seite ODER auf der Verkäufer-
+// Profilseite führt daher bei bereits bestehendem Chat immer zum selben
+// Thread (services/messages/createConversation.ts prüft das). `listingId`
+// ist rein informativ (der Listing-Kontext beim allerersten Anlegen) und
+// wird bei Wiederverwendung nicht überschrieben.
+//
+// `sellerId` zeigt auf SellerProfile (nicht auf User), analog zu
+// Listing.sellerId/Review.sellerId – der Verkäufer wird hier wie überall
+// sonst im Projekt über sein SellerProfile adressiert. `senderId` auf
+// Message zeigt dagegen auf User, da sowohl Käufer als auch der
+// Verkäufer (über seinen zugrundeliegenden User-Account) Nachrichten
+// senden.
+//
+// `deletedByBuyerAt`/`deletedBySellerAt`: vorbereiteter Soft-Delete pro
+// Teilnehmer (services/messages/deleteConversation.ts) – blendet den Chat
+// nur aus der EIGENEN Liste aus (getConversations.ts filtert danach),
+// der andere Teilnehmer behält seinen Zugriff unverändert. Kein Hard
+// Delete, damit die Gegenseite nie überraschend Nachrichten verliert.
+//
+// onDelete: Cascade auf User/SellerProfile (persönliche, nicht-finanzielle
+// Daten, gleiches Muster wie Notification/Collection/Wishlist). onDelete:
+// SetNull auf Listing, da Listings (im Gegensatz zu Usern) real hart
+// gelöscht werden können (services/listing/deleteListing.ts) – der Chat
+// soll dabei erhalten bleiben, nur die Listing-Referenz entfällt.
+// ---------------------------------------------------------------------------
+
+model Conversation {
+  id String @id @default(cuid())
+
+  buyerId String
+  buyer   User   @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  sellerId String
+  seller   SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  listingId String?
+  listing   Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+
+  deletedByBuyerAt  DateTime? @db.Timestamptz(3)
+  deletedBySellerAt DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  messages Message[]
+
+  @@unique([buyerId, sellerId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([updatedAt])
+  @@map("conversation")
+}
+
+model Message {
+  id String @id @default(cuid())
+
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  senderId String
+  sender   User   @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  message String
+  isRead  Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("message")
+}
+
+// ---------------------------------------------------------------------------
+// SellerFollow – Verkäufer folgen (Follow System)
+//
+// Ein User kann einem SellerProfile folgen (nicht: einem User direkt) –
+// konsistent mit allen anderen Verkäufer-bezogenen Relationen im Projekt
+// (Listing.sellerId, Review.sellerId, Conversation.sellerId, ...), die
+// alle auf SellerProfile statt auf User zeigen. Die Follower-Anzahl wird
+// NICHT als eigenes Zähler-Feld auf SellerProfile geführt (siehe dortiger
+// Kommentar), sondern von services/follow/getFollowerCount.ts live über
+// count() berechnet – eine einzige Quelle der Wahrheit.
+//
+// onDelete: Cascade auf User/SellerProfile (persönliche, nicht-
+// finanzielle Beziehung, gleiches Muster wie Notification/Collection/
+// Wishlist/Conversation) – ein Follow-Eintrag ist kein dauerhafter Beleg
+// wie Review/Order und darf beim Löschen der verknüpften Entität einfach
+// mit verschwinden.
+// ---------------------------------------------------------------------------
+
+model SellerFollow {
+  id String @id @default(cuid())
+
+  followerId String
+  follower   User   @relation(fields: [followerId], references: [id], onDelete: Cascade)
+
+  sellerProfileId String
+  sellerProfile   SellerProfile @relation(fields: [sellerProfileId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([followerId, sellerProfileId])
+  @@index([followerId])
+  @@index([sellerProfileId])
+  @@map("seller_follow")
+}
