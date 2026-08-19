@@ -1,23 +1,33 @@
-name: Deploy
+name: Deploy to Vercel
 
-# Läuft bei jedem Push auf main: verbindet sich per SSH auf den Server und
-# aktualisiert den bereits laufenden Docker-Compose-Stack (siehe README.md
-# "Docker Deployment" -> "Updates"). Migrationen laufen automatisch beim
-# Container-Neustart (docker/entrypoint.sh), kein separater Schritt nötig.
+# Deployt bei jedem Push auf main automatisch nach Vercel (kein Docker, kein
+# eigener Server, kein Port-Management – Next.js läuft direkt als
+# Vercel-Deployment). Offizielles Vercel-CI/CD-Muster über die Vercel-CLI.
 #
-# Voraussetzung: Auf dem Server läuft bereits die Ersteinrichtung aus dem
-# README ("git clone" + ".env" + "docker compose up -d"). Dieser Workflow
-# ersetzt nur den manuellen "git pull && docker compose up -d --build"-Schritt
-# durch eine Automatisierung.
+# Voraussetzungen (einmalig):
+#   1. Vercel-Account, Projekt mit diesem Repo verknüpft (vercel.com -> Add
+#      New Project -> GitHub-Repo auswählen). Next.js wird automatisch
+#      erkannt, kein Konfigurationsaufwand.
+#   2. Alle Umgebungsvariablen aus .env.example im Vercel-Projekt hinterlegen
+#      (Project Settings -> Environment Variables) – DATABASE_URL,
+#      BETTER_AUTH_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, REDIS_URL
+#      usw. Vercel selbst hostet keine Datenbank/Redis – dafür einen
+#      externen, ebenfalls serverlosen Dienst verwenden (z. B. Neon für
+#      Postgres, Upstash für Redis).
+#   3. Repository-Secrets hier bei GitHub setzen (Settings -> Secrets and
+#      variables -> Actions):
+#        VERCEL_TOKEN        Erzeugen unter vercel.com/account/tokens
+#        VERCEL_ORG_ID       Aus `vercel link` (lokal einmal ausführen) bzw.
+#        VERCEL_PROJECT_ID   aus den Vercel-Projekteinstellungen
 #
-# Benötigte Repository-Secrets (GitHub: Settings -> Secrets and variables ->
-# Actions -> New repository secret):
-#   SSH_HOST         IP-Adresse oder Domain des Servers
-#   SSH_USER         SSH-Benutzername auf dem Server
-#   SSH_PRIVATE_KEY  Privater SSH-Schlüssel (siehe README-Hinweis unten)
-#   DEPLOY_PATH      Absoluter Pfad zum geklonten Repository auf dem Server
-#                     (z. B. /home/deploy/project-atlas)
-#   SSH_PORT         Optional, Standard 22
+# Wichtige Einschränkung: services/jobs/worker.ts (Background-Jobs) und
+# services/realtime/server.ts (WebSocket-Server) sind dauerhaft laufende
+# Node-Prozesse – Vercel führt ausschließlich kurzlebige Serverless-
+# Funktionen aus, kann solche Prozesse also NICHT hosten. Checkout,
+# Marketplace, Login und Chat funktionieren trotzdem (bestehende
+# Timeout-Fallback-Architektur, siehe README "Redis & Queue"), aber
+# Hintergrund-Jobs (Preisalarme, E-Mail-Versand, Realtime-Chat-Push) bleiben
+# inaktiv, bis Worker/Realtime-Server auf einem separaten Dienst laufen.
 
 on:
   push:
@@ -27,16 +37,20 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          script: |
-            set -e
-            cd "${{ secrets.DEPLOY_PATH }}"
-            git pull origin main
-            docker compose up -d --build
+      - uses: actions/checkout@v4
+
+      - name: Vercel-CLI installieren
+        run: npm install --global vercel@latest
+
+      - name: Vercel-Projektumgebung laden
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}

@@ -12,6 +12,7 @@ Prisma 7 · PostgreSQL · Better Auth · Stripe · BullMQ/Redis.
 - [Production](#production)
 - [Deployment](#deployment)
 - [Docker Deployment](#docker-deployment)
+- [Vercel Deployment](#vercel-deployment)
 - [PostgreSQL](#postgresql)
 - [Redis & Queue](#redis--queue)
 - [Scheduler](#scheduler)
@@ -329,29 +330,67 @@ up -d --build` ersetzt nur den `app`-Container (bzw. `nginx`, falls sich
 dessen Dateien geändert haben), `postgres`/`redis` und ihre Volumes bleiben
 unangetastet.
 
-**Automatisch statt manuell** (optional): `.github/workflows/deploy.yml`
-führt exakt diese beiden Befehle bei jedem Push auf `main` automatisch per
-SSH auf dem Server aus. Voraussetzung: die Ersteinrichtung oben ist auf dem
-Server bereits einmal manuell durchgeführt worden (`git clone` + `.env` +
-`docker compose up -d`) – der Workflow ersetzt nur den wiederkehrenden
-Update-Schritt, nicht die Ersteinrichtung. Damit er funktioniert, müssen
-folgende Repository-Secrets gesetzt sein (GitHub → Settings → Secrets and
-variables → Actions):
+Für ein Docker-loses Setup siehe [Vercel Deployment](#vercel-deployment)
+unten – dort übernimmt `.github/workflows/deploy.yml` genau diesen
+Update-Schritt automatisch, ganz ohne SSH/Server.
+
+## Vercel Deployment
+
+Alternative zu [Docker Deployment](#docker-deployment) ohne eigenen Server,
+ohne Docker, ohne sichtbare Ports – Next.js läuft direkt als
+Vercel-Deployment, erreichbar ausschließlich über eine URL.
+
+### Einrichtung (einmalig)
+
+1. Vercel-Account erstellen, auf vercel.com "Add New Project" → dieses
+   GitHub-Repo auswählen. Next.js wird automatisch erkannt, keine
+   Konfiguration nötig.
+2. Alle Variablen aus [Environment](#environment) im Vercel-Projekt
+   hinterlegen (Project Settings → Environment Variables) – `DATABASE_URL`,
+   `BETTER_AUTH_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
+   `REDIS_URL` usw.
+3. Datenbank/Redis extern hosten (Vercel selbst hostet keine Datenbank) –
+   z. B. [Neon](https://neon.tech) für Postgres, [Upstash](https://upstash.com)
+   für Redis. Beide sind ebenfalls serverlos: nur eine Connection-URL, kein
+   eigener Server.
+4. `npx prisma migrate deploy` einmalig gegen die neue Produktionsdatenbank
+   ausführen (lokal, mit der echten `DATABASE_URL` in `.env`).
+
+Danach ist bereits jeder Push auf `main` automatisch live – das ist
+Vercels eingebaute GitHub-Integration, dafür ist kein Workflow nötig.
+
+### Automatisiertes Deployment über GitHub Actions
+
+`.github/workflows/deploy.yml` deployt zusätzlich explizit über die
+Vercel-CLI (offizielles Vercel-CI/CD-Muster) – sinnvoll, wenn der
+Deployment-Status im GitHub-Actions-Tab sichtbar sein soll. Benötigte
+Repository-Secrets (GitHub → Settings → Secrets and variables → Actions):
 
 | Secret | Wert |
 | --- | --- |
-| `SSH_HOST` | IP-Adresse oder Domain des Servers |
-| `SSH_USER` | SSH-Benutzername auf dem Server |
-| `SSH_PRIVATE_KEY` | Privater SSH-Schlüssel eines eigens dafür angelegten Deploy-Keys (kein persönlicher Schlüssel – siehe Hinweis unten) |
-| `DEPLOY_PATH` | Absoluter Pfad zum geklonten Repository auf dem Server, z. B. `/home/deploy/project-atlas` |
-| `SSH_PORT` | Optional, Standard `22` |
+| `VERCEL_TOKEN` | Erzeugen unter vercel.com/account/tokens |
+| `VERCEL_ORG_ID` | Aus `vercel link` (lokal `npx vercel link` einmal ausführen) oder den Vercel-Projekteinstellungen |
+| `VERCEL_PROJECT_ID` | Ebenfalls aus `vercel link` bzw. den Projekteinstellungen |
 
-Empfehlung für `SSH_PRIVATE_KEY`: einen dedizierten Deploy-Key erzeugen
-(`ssh-keygen -t ed25519 -f deploy_key -N ""`), den öffentlichen Teil
-(`deploy_key.pub`) auf dem Server in `~/.ssh/authorized_keys` des
-Deploy-Nutzers eintragen, den privaten Teil (`deploy_key`) als
-`SSH_PRIVATE_KEY`-Secret hinterlegen – nicht den eigenen persönlichen
-SSH-Schlüssel wiederverwenden.
+### Bekannte Einschränkung: keine dauerhaften Prozesse
+
+Vercel führt ausschließlich kurzlebige Serverless-Funktionen aus.
+`services/jobs/worker.ts` (Background-Jobs: E-Mails, Preisalarme,
+Katalog-Import) und `services/realtime/server.ts` (WebSocket-Server) sind
+dauerhaft laufende Node-Prozesse – die kann Vercel **nicht** hosten.
+
+Was trotzdem funktioniert: Login, Registrierung, Marketplace, Checkout,
+Chat (per Seitenaufruf/Server Action, ohne Live-Push) – die bestehende
+Timeout-Fallback-Architektur (siehe [Redis & Queue](#redis--queue)) fängt
+die fehlende Job-Verarbeitung bereits ab, kein Request hängt.
+
+Was NICHT läuft, ohne weitere Massnahme: automatischer E-Mail-Versand
+(Passwort-Reset, Bestellbestätigung landet nur in der Queue, wird nie
+abgeholt), Preisalarme, Live-Push im Chat. Für diese Funktionen Worker und
+Realtime-Server auf einem separaten, dauerhaft laufenden Dienst betreiben
+(z. B. einem kleinen Railway/Render-Service oder einem einzelnen kleinen
+VPS nur dafür) und dort auf denselben `REDIS_URL`/`DATABASE_URL` wie das
+Vercel-Deployment zeigen lassen.
 
 ### Backup
 
