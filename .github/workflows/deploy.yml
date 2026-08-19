@@ -1,0 +1,42 @@
+name: Deploy
+
+# Läuft bei jedem Push auf main: verbindet sich per SSH auf den Server und
+# aktualisiert den bereits laufenden Docker-Compose-Stack (siehe README.md
+# "Docker Deployment" -> "Updates"). Migrationen laufen automatisch beim
+# Container-Neustart (docker/entrypoint.sh), kein separater Schritt nötig.
+#
+# Voraussetzung: Auf dem Server läuft bereits die Ersteinrichtung aus dem
+# README ("git clone" + ".env" + "docker compose up -d"). Dieser Workflow
+# ersetzt nur den manuellen "git pull && docker compose up -d --build"-Schritt
+# durch eine Automatisierung.
+#
+# Benötigte Repository-Secrets (GitHub: Settings -> Secrets and variables ->
+# Actions -> New repository secret):
+#   SSH_HOST         IP-Adresse oder Domain des Servers
+#   SSH_USER         SSH-Benutzername auf dem Server
+#   SSH_PRIVATE_KEY  Privater SSH-Schlüssel (siehe README-Hinweis unten)
+#   DEPLOY_PATH      Absoluter Pfad zum geklonten Repository auf dem Server
+#                     (z. B. /home/deploy/project-atlas)
+#   SSH_PORT         Optional, Standard 22
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+            cd "${{ secrets.DEPLOY_PATH }}"
+            git pull origin main
+            docker compose up -d --build

@@ -329,6 +329,30 @@ up -d --build` ersetzt nur den `app`-Container (bzw. `nginx`, falls sich
 dessen Dateien geändert haben), `postgres`/`redis` und ihre Volumes bleiben
 unangetastet.
 
+**Automatisch statt manuell** (optional): `.github/workflows/deploy.yml`
+führt exakt diese beiden Befehle bei jedem Push auf `main` automatisch per
+SSH auf dem Server aus. Voraussetzung: die Ersteinrichtung oben ist auf dem
+Server bereits einmal manuell durchgeführt worden (`git clone` + `.env` +
+`docker compose up -d`) – der Workflow ersetzt nur den wiederkehrenden
+Update-Schritt, nicht die Ersteinrichtung. Damit er funktioniert, müssen
+folgende Repository-Secrets gesetzt sein (GitHub → Settings → Secrets and
+variables → Actions):
+
+| Secret | Wert |
+| --- | --- |
+| `SSH_HOST` | IP-Adresse oder Domain des Servers |
+| `SSH_USER` | SSH-Benutzername auf dem Server |
+| `SSH_PRIVATE_KEY` | Privater SSH-Schlüssel eines eigens dafür angelegten Deploy-Keys (kein persönlicher Schlüssel – siehe Hinweis unten) |
+| `DEPLOY_PATH` | Absoluter Pfad zum geklonten Repository auf dem Server, z. B. `/home/deploy/project-atlas` |
+| `SSH_PORT` | Optional, Standard `22` |
+
+Empfehlung für `SSH_PRIVATE_KEY`: einen dedizierten Deploy-Key erzeugen
+(`ssh-keygen -t ed25519 -f deploy_key -N ""`), den öffentlichen Teil
+(`deploy_key.pub`) auf dem Server in `~/.ssh/authorized_keys` des
+Deploy-Nutzers eintragen, den privaten Teil (`deploy_key`) als
+`SSH_PRIVATE_KEY`-Secret hinterlegen – nicht den eigenen persönlichen
+SSH-Schlüssel wiederverwenden.
+
 ### Backup
 
 PostgreSQL-Dump (empfohlen: regelmäßig per Cron):
