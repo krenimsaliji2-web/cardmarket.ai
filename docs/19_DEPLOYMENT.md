@@ -34,7 +34,7 @@ Jede Umgebung besitzt eine eigene Konfiguration.
 Die Plattform besteht aus:
 
 - Web Application
-- PostgreSQL
+- MariaDB
 - Redis
 - Meilisearch
 - Cloudflare R2
@@ -63,7 +63,7 @@ Für lokale Entwicklung wird Docker Compose verwendet.
 Services:
 
 - app
-- postgres
+- mariadb
 - redis
 - meilisearch
 - mailpit
@@ -167,7 +167,7 @@ Gespeichert werden:
 
 # Database
 
-PostgreSQL
+MariaDB
 
 Automatische:
 

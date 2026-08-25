@@ -44,7 +44,7 @@ Es werden folgende Backups erstellt:
 
 # Database Backup
 
-PostgreSQL wird automatisch gesichert.
+MariaDB wird automatisch gesichert.
 
 Zeitplan:
 

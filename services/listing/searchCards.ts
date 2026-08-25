@@ -23,7 +23,7 @@ export async function searchCards(query: string): Promise<CardSearchResult[]> {
   }
 
   return prisma.card.findMany({
-    where: { name: { contains: trimmed, mode: "insensitive" } },
+    where: { name: { contains: trimmed } },
     orderBy: { name: "asc" },
     take: MAX_RESULTS,
     select: {

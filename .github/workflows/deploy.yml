@@ -12,8 +12,8 @@ name: Deploy to Vercel
 #      (Project Settings -> Environment Variables) – DATABASE_URL,
 #      BETTER_AUTH_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, REDIS_URL
 #      usw. Vercel selbst hostet keine Datenbank/Redis – dafür einen
-#      externen, ebenfalls serverlosen Dienst verwenden (z. B. Neon für
-#      Postgres, Upstash für Redis).
+#      externen, ebenfalls serverlosen Dienst verwenden (z. B. PlanetScale
+#      für MySQL-kompatible Datenbanken, Upstash für Redis).
 #   3. Repository-Secrets hier bei GitHub setzen (Settings -> Secrets and
 #      variables -> Actions):
 #        VERCEL_TOKEN        Erzeugen unter vercel.com/account/tokens

@@ -73,7 +73,7 @@ Backend
 
 Database
 
-- PostgreSQL
+- MariaDB
 
 Authentication
 

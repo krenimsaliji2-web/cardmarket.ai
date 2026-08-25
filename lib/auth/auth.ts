@@ -49,7 +49,7 @@ if (!process.env.BETTER_AUTH_SECRET || process.env.BETTER_AUTH_SECRET.length < 3
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
-    provider: "postgresql",
+    provider: "mysql",
   }),
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.BETTER_AUTH_URL,

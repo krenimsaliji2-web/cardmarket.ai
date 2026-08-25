@@ -16,7 +16,7 @@ echo "[entrypoint] Migrationen angewendet."
 # Bekannte Einschränkung (dokumentiert in README "Bekannte Einschränkungen"):
 # stürzt einer dieser Hintergrundprozesse ab, bleibt der Container dennoch
 # "healthy" (der Docker-Healthcheck prüft ausschließlich /api/health, also
-# PostgreSQL-/Redis-Erreichbarkeit, nicht den Prozessstatus von Worker/
+# MariaDB-/Redis-Erreichbarkeit, nicht den Prozessstatus von Worker/
 # Realtime-Server) – für produktionskritische Job-Verarbeitung empfiehlt
 # sich ein eigener, überwachter Prozess/Service statt dieser einfachen
 # Variante.

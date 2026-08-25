@@ -134,12 +134,12 @@ function buildWhere(params: SearchMarketplaceParams): Prisma.ListingWhereInput {
   const search = params.search?.trim();
   if (search) {
     where.OR = [
-      { card: { name: { contains: search, mode: "insensitive" } } },
-      { card: { cardNumber: { contains: search, mode: "insensitive" } } },
-      { card: { set: { name: { contains: search, mode: "insensitive" } } } },
-      { card: { game: { name: { contains: search, mode: "insensitive" } } } },
-      { edition: { contains: search, mode: "insensitive" } },
-      { seller: { displayName: { contains: search, mode: "insensitive" } } },
+      { card: { name: { contains: search } } },
+      { card: { cardNumber: { contains: search } } },
+      { card: { set: { name: { contains: search } } } },
+      { card: { game: { name: { contains: search } } } },
+      { edition: { contains: search } },
+      { seller: { displayName: { contains: search } } },
     ];
   }
 
@@ -149,11 +149,11 @@ function buildWhere(params: SearchMarketplaceParams): Prisma.ListingWhereInput {
   const cardFilter: Prisma.CardWhereInput = {};
   const cardName = params.cardName?.trim();
   if (cardName) {
-    cardFilter.name = { contains: cardName, mode: "insensitive" };
+    cardFilter.name = { contains: cardName };
   }
   const cardNumber = params.cardNumber?.trim();
   if (cardNumber) {
-    cardFilter.cardNumber = { contains: cardNumber, mode: "insensitive" };
+    cardFilter.cardNumber = { contains: cardNumber };
   }
   if (params.game) {
     cardFilter.game = { slug: params.game };
@@ -194,7 +194,7 @@ function buildWhere(params: SearchMarketplaceParams): Prisma.ListingWhereInput {
   const sellerFilter: Prisma.SellerProfileWhereInput = {};
   const sellerName = params.seller?.trim();
   if (sellerName) {
-    sellerFilter.displayName = { contains: sellerName, mode: "insensitive" };
+    sellerFilter.displayName = { contains: sellerName };
   }
   if (params.verified) {
     sellerFilter.verified = true;
@@ -264,8 +264,10 @@ async function getFilterOptions(): Promise<MarketplaceFilterOptions> {
  * Alleinige Zugriffsstelle für die erweiterte Marketplace-Suche inkl.
  * Filtern, Sortieren und Pagination. Alle Filter sind optional und frei
  * kombinierbar, Text-Filter sind case-insensitive Teiltreffer (Prisma
- * `contains`/`mode: "insensitive"`) – keine In-Memory-Filterung, jede
- * Bedingung landet direkt im Prisma-`where`.
+ * `contains` – MariaDB-Umstellung: kein `mode: "insensitive"` mehr nötig,
+ * das übernimmt bereits die Standard-Kollation `utf8mb4_unicode_ci` der
+ * Spalten) – keine In-Memory-Filterung, jede Bedingung landet direkt im
+ * Prisma-`where`.
  *
  * Performance: genau ein Promise.all mit count()/findMany()/Filter-
  * Optionen – keine Schleifen, keine Zusatz-Query pro Listing (kein N+1).

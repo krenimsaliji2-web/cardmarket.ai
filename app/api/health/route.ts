@@ -7,7 +7,7 @@ import { redisConnection } from "@/services/jobs/queue";
  * Infrastruktur-Health-Check für den Docker-Healthcheck (siehe Dockerfile)
  * und externe Monitoring-/Load-Balancer-Probes (Feature 86 – Deployment).
  * Prüft ausschließlich Erreichbarkeit der beiden externen Abhängigkeiten
- * (PostgreSQL, Redis) – keine Businesslogik, keine Authentifizierung
+ * (MariaDB, Redis) – keine Businesslogik, keine Authentifizierung
  * nötig, da hier keine Nutzerdaten zurückgegeben werden.
  *
  * Redis ist für den reinen Seitenbetrieb nicht zwingend erforderlich

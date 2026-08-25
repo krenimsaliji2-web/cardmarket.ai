@@ -14,7 +14,7 @@ import type { MetadataRoute } from "next";
  * beim `next build` einmalig statisch vor – das erfordert eine zur
  * Build-Zeit erreichbare Datenbank. In einem Docker-Multi-Stage-Build
  * läuft `next build` aber im Builder-Stage ohne Netzwerkzugriff auf den
- * erst zur Laufzeit gestarteten Postgres-Container, wodurch der Build
+ * erst zur Laufzeit gestarteten MariaDB-Container, wodurch der Build
  * fehlschlagen würde. `force-dynamic` macht diese Route konsistent mit
  * praktisch allen anderen Routen der App (bereits dynamisch wegen
  * `headers()` im Root-Layout, siehe components/layout/site-header.tsx)

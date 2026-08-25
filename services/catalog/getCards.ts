@@ -98,7 +98,7 @@ export interface CardDetailResult {
  * da thematisch identisch ("Karten laden").
  */
 export async function getCardById(id: string): Promise<CardDetailResult | null> {
-  return prisma.card.findUnique({
+  const card = await prisma.card.findUnique({
     where: { id },
     select: {
       id: true,
@@ -119,4 +119,13 @@ export async function getCardById(id: string): Promise<CardDetailResult | null> 
       set: { select: { slug: true, code: true, name: true } },
     },
   });
+
+  if (!card) {
+    return null;
+  }
+
+  // types/subtypes sind Json statt eines nativen Arrays (MariaDB-Umstellung
+  // – siehe prisma/schema.prisma), werden aber ausschließlich als
+  // String-Arrays geschrieben (createCard.ts) – hier entsprechend typisiert.
+  return { ...card, types: card.types as string[], subtypes: card.subtypes as string[] };
 }

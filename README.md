@@ -1,7 +1,7 @@
 # Project Atlas
 
 KI-gestützter Trading-Card-Marktplatz. Next.js 15 (App Router) · TypeScript ·
-Prisma 7 · PostgreSQL · Better Auth · Stripe · BullMQ/Redis.
+Prisma 7 · MariaDB · Better Auth · Stripe · BullMQ/Redis.
 
 ## Inhalt
 
@@ -13,7 +13,7 @@ Prisma 7 · PostgreSQL · Better Auth · Stripe · BullMQ/Redis.
 - [Deployment](#deployment)
 - [Docker Deployment](#docker-deployment)
 - [Vercel Deployment](#vercel-deployment)
-- [PostgreSQL](#postgresql)
+- [MariaDB](#mariadb)
 - [Redis & Queue](#redis--queue)
 - [Scheduler](#scheduler)
 - [Stripe](#stripe)
@@ -24,7 +24,7 @@ Prisma 7 · PostgreSQL · Better Auth · Stripe · BullMQ/Redis.
 Voraussetzungen:
 
 - Node.js `>= 20` (siehe `engines` in `package.json`)
-- Eine laufende PostgreSQL-Instanz
+- Eine laufende MariaDB-/MySQL-Instanz
 - Eine laufende Redis-Instanz (nur nötig für Background Jobs/Scheduler, siehe unten)
 
 ```bash
@@ -44,7 +44,7 @@ Alle Variablen sind in `.env.example` mit Beschreibung dokumentiert. Kurzüberbl
 
 | Variable | Pflicht | Zweck |
 | --- | --- | --- |
-| `DATABASE_URL` | ja | PostgreSQL-Connection-String (Prisma) |
+| `DATABASE_URL` | ja | MariaDB-/MySQL-Connection-String (Prisma) |
 | `BETTER_AUTH_SECRET` | ja | Session-/Token-Signierung (`openssl rand -base64 32`) |
 | `BETTER_AUTH_URL` | ja | Server-seitige Basis-URL von Better Auth |
 | `NEXT_PUBLIC_BETTER_AUTH_URL` | ja | Öffentliche Basis-URL der App – dient **gleichzeitig** als Quelle für Stripe-Redirect-URLs, `robots.txt` und `sitemap.xml` (kein separates `NEXT_PUBLIC_APP_URL` nötig) |
@@ -55,7 +55,7 @@ Alle Variablen sind in `.env.example` mit Beschreibung dokumentiert. Kurzüberbl
 | `SCHEDULER_ENABLED` | nein | Muss explizit `"true"` sein, damit der Scheduler produktiv Jobs auslöst. Default `false` |
 | `REALTIME_PORT` | nein | Port des WebSocket-Servers, Default `3001` |
 | `ONE_PIECE_API_KEY` | nein (nur für `npm run import:onepiece`) | Key für apitcg.com (https://apitcg.com/platform) – für alle anderen Katalogimporte nicht nötig |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | nur für Docker Compose | Zugangsdaten des `postgres`-Containers – `DATABASE_URL` für den `app`-Container wird daraus automatisch zusammengesetzt (siehe [Docker Deployment](#docker-deployment)). Ohne Docker ohne Wirkung. |
+| `MARIADB_ROOT_PASSWORD` / `MARIADB_USER` / `MARIADB_PASSWORD` / `MARIADB_DATABASE` | nur für Docker Compose | Zugangsdaten des `mariadb`-Containers – `DATABASE_URL` für den `app`-Container wird daraus automatisch zusammengesetzt (siehe [Docker Deployment](#docker-deployment)). Ohne Docker ohne Wirkung. |
 | `DOMAIN` | nur für Docker Compose | Hostname für nginx/Let's-Encrypt-Zertifikat (siehe [HTTPS](#https-1)). Ohne Docker ohne Wirkung. |
 | `CERTBOT_EMAIL` | nein | Kontakt-E-Mail für Let's-Encrypt-Ablaufbenachrichtigungen. |
 
@@ -100,7 +100,7 @@ npm run start
 ```
 
 `next start` erwartet exakt die Umgebungsvariablen aus `.env` (siehe
-Environment) sowie eine erreichbare PostgreSQL-Instanz. Redis ist für den
+Environment) sowie eine erreichbare MariaDB-/MySQL-Instanz. Redis ist für den
 reinen Seitenbetrieb (SSR, Checkout, Auth) **nicht** erforderlich – nur für
 Background Jobs und den Scheduler (siehe unten). Ist Redis nicht erreichbar,
 degradieren die betroffenen Aktionen kontrolliert (Timeout, siehe
@@ -145,7 +145,7 @@ cp .env.example .env   # anschließend mit echten Werten befüllen, siehe unten
 docker compose up -d
 ```
 
-Vier Container, keine weiteren: `app` (Next.js), `postgres`, `redis`,
+Vier Container, keine weiteren: `app` (Next.js), `mariadb`, `redis`,
 `nginx`.
 
 ### Voraussetzungen
@@ -197,7 +197,7 @@ cd project-atlas
   Vordergrund. Migrationen laufen bewusst erst zur Laufzeit, nicht beim
   Image-Build, da dafür eine erreichbare Datenbank nötig ist, die beim
   isolierten `docker build` noch nicht existiert (erst
-  `docker compose up` startet den `postgres`-Container).
+  `docker compose up` startet den `mariadb`-Container).
 - `.dockerignore` schließt `node_modules`, `.next`, `.env`, `public/uploads`,
   `public/invoices` u. a. vom Build-Kontext aus.
 
@@ -208,11 +208,11 @@ cd project-atlas
 | Service | Image / Build | Zweck |
 | --- | --- | --- |
 | `app` | `./Dockerfile` | Next.js-Server, Job-Worker, Realtime-Server (siehe oben). Kein Port nach außen – nur über `nginx` erreichbar. |
-| `postgres` | `postgres:16-alpine` | Datenbank, persistentes Volume `postgres_data`. |
+| `mariadb` | `mariadb:11` | Datenbank, persistentes Volume `mariadb_data`. |
 | `redis` | `redis:7-alpine` | Queue-Backend für BullMQ (`services/jobs/`). |
 | `nginx` | `./nginx/Dockerfile` | Reverse Proxy, TLS-Terminierung, siehe [HTTPS](#https-1). Einziger Container mit nach außen offenen Ports (80/443). |
 
-Persistente Volumes: `postgres_data`, `uploads_data`
+Persistente Volumes: `mariadb_data`, `uploads_data`
 (→ `public/uploads` im `app`-Container, siehe
 `services/storage/LocalStorageProvider.ts`), `invoices_data`
 (→ `public/invoices`, siehe `services/invoices/createInvoice.ts`),
@@ -220,7 +220,7 @@ Persistente Volumes: `postgres_data`, `uploads_data`
 `docker compose down` (nicht aber `docker compose down -v`).
 
 `DATABASE_URL` und `REDIS_URL` werden für den `app`-Container automatisch
-im internen Docker-Netzwerk zusammengesetzt (`postgres`/`redis` als
+im internen Docker-Netzwerk zusammengesetzt (`mariadb`/`redis` als
 Hostname statt `localhost`) – die Werte aus `.env` gelten nur für lokale
 Entwicklung ohne Docker, siehe Kommentare in `docker-compose.yml`.
 
@@ -236,9 +236,10 @@ docker compose down           # Stoppen, Volumes bleiben erhalten
 `.env.example` kopieren und ausfüllen (siehe [Environment](#environment)
 für alle Variablen). Für Docker Compose zusätzlich wichtig:
 
-- `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` – Datenbank-
-  Zugangsdaten. Passwort möglichst ohne `@ : /` (werden bei der
-  automatischen `DATABASE_URL`-Zusammensetzung nicht URL-kodiert).
+- `MARIADB_ROOT_PASSWORD`, `MARIADB_USER`, `MARIADB_PASSWORD`,
+  `MARIADB_DATABASE` – Datenbank-Zugangsdaten. Passwort möglichst ohne
+  `@ : /` (werden bei der automatischen `DATABASE_URL`-Zusammensetzung
+  nicht URL-kodiert).
 - `DOMAIN` – Hostname für nginx/Let's Encrypt.
 - `NEXT_PUBLIC_BETTER_AUTH_URL` und `BETTER_AUTH_URL` – auf
   `https://<DOMAIN>` setzen (nicht `localhost`), sobald ein echtes
@@ -316,7 +317,7 @@ docker compose exec app npm run import:pokemon
 
 `docker compose ps` zeigt den Health-Status aller Container;
 `/api/health` (über nginx: `https://<DOMAIN>/api/health`) liefert `200`,
-sobald PostgreSQL erreichbar ist.
+sobald MariaDB erreichbar ist.
 
 ### Updates
 
@@ -327,7 +328,7 @@ docker compose up -d --build   # baut das app-Image neu, Migrationen laufen auto
 
 Kein manueller Migrations- oder Downtime-Schritt nötig – `docker compose
 up -d --build` ersetzt nur den `app`-Container (bzw. `nginx`, falls sich
-dessen Dateien geändert haben), `postgres`/`redis` und ihre Volumes bleiben
+dessen Dateien geändert haben), `mariadb`/`redis` und ihre Volumes bleiben
 unangetastet.
 
 Für ein Docker-loses Setup siehe [Vercel Deployment](#vercel-deployment)
@@ -350,9 +351,9 @@ Vercel-Deployment, erreichbar ausschließlich über eine URL.
    `BETTER_AUTH_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
    `REDIS_URL` usw.
 3. Datenbank/Redis extern hosten (Vercel selbst hostet keine Datenbank) –
-   z. B. [Neon](https://neon.tech) für Postgres, [Upstash](https://upstash.com)
-   für Redis. Beide sind ebenfalls serverlos: nur eine Connection-URL, kein
-   eigener Server.
+   z. B. [PlanetScale](https://planetscale.com) für MySQL-kompatible
+   Datenbanken, [Upstash](https://upstash.com) für Redis. Beide sind
+   ebenfalls serverlos: nur eine Connection-URL, kein eigener Server.
 4. `npx prisma migrate deploy` einmalig gegen die neue Produktionsdatenbank
    ausführen (lokal, mit der echten `DATABASE_URL` in `.env`).
 
@@ -394,10 +395,10 @@ Vercel-Deployment zeigen lassen.
 
 ### Backup
 
-PostgreSQL-Dump (empfohlen: regelmäßig per Cron):
+MariaDB-Dump (empfohlen: regelmäßig per Cron):
 
 ```bash
-docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup-$(date +%F).sql
+docker compose exec -T mariadb mariadb-dump -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" > backup-$(date +%F).sql
 ```
 
 Uploads/Rechnungen sichern (Docker Volumes):
@@ -412,7 +413,7 @@ docker run --rm -v project-atlas_invoices_data:/data -v "$PWD":/backup alpine \
 ### Restore
 
 ```bash
-cat backup-2026-01-01.sql | docker compose exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB"
+cat backup-2026-01-01.sql | docker compose exec -T mariadb mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE"
 
 docker run --rm -v project-atlas_uploads_data:/data -v "$PWD":/backup alpine \
   sh -c "rm -rf /data/* && tar xzf /backup/uploads-2026-01-01.tar.gz -C /data"
@@ -447,10 +448,10 @@ Job-Worker läuft automatisch im `app`-Container mit (siehe
 - **nginx startet nicht / "cannot load certificate"** – `DOMAIN` in `.env`
   nicht gesetzt (siehe `nginx/docker-entrypoint-wrapper.sh`, das
   Platzhalter-Zertifikat wird nur erzeugt, wenn `DOMAIN` einen Wert hat).
-- **`/api/health` liefert 503** – `docker compose logs postgres` bzw.
+- **`/api/health` liefert 503** – `docker compose logs mariadb` bzw.
   `docker compose ps` prüfen; meist ist die Datenbank noch beim Starten
-  (`start_period` im Healthcheck) oder `POSTGRES_*`/`.env` stimmen nicht
-  mit einem bereits existierenden `postgres_data`-Volume überein (Passwort
+  (`start_period` im Healthcheck) oder `MARIADB_*`/`.env` stimmen nicht
+  mit einem bereits existierenden `mariadb_data`-Volume überein (Passwort
   wird nur beim allerersten Start des Volumes gesetzt).
 - **Browser zeigt Zertifikatswarnung** – erwartet, bis ein echtes
   Let's-Encrypt-Zertifikat bezogen wurde, siehe [HTTPS](#https-1).
@@ -461,7 +462,7 @@ Job-Worker läuft automatisch im `app`-Container mit (siehe
   app` prüfen; bei einer inkompatiblen manuellen Datenbankänderung hilft
   nur ein Restore aus dem letzten Backup (siehe oben).
 
-## PostgreSQL
+## MariaDB
 
 ```bash
 npx prisma migrate deploy   # Produktion: bestehende Migrationen anwenden

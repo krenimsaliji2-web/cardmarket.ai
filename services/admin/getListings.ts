@@ -64,8 +64,8 @@ export async function getListings(
     ...(search
       ? {
           OR: [
-            { card: { name: { contains: search, mode: "insensitive" as const } } },
-            { seller: { displayName: { contains: search, mode: "insensitive" as const } } },
+            { card: { name: { contains: search } } },
+            { seller: { displayName: { contains: search } } },
           ],
         }
       : {}),

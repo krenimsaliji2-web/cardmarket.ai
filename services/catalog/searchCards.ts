@@ -53,8 +53,8 @@ export async function searchCards(params: SearchCardsParams = {}): Promise<Searc
   }
   if (params.query) {
     where.OR = [
-      { name: { contains: params.query, mode: "insensitive" } },
-      { cardNumber: { contains: params.query, mode: "insensitive" } },
+      { name: { contains: params.query } },
+      { cardNumber: { contains: params.query } },
     ];
   }
 

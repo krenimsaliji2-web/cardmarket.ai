@@ -178,7 +178,7 @@ export async function createOrder(session: Stripe.Checkout.Session): Promise<Cre
   // Chat zwischen Käufer und jedem beteiligten Verkäufer automatisch
   // anlegen (oder den bereits bestehenden weiterverwenden – createConversation()
   // ist bereits idempotent über @@unique([buyerId, sellerId]), siehe dort).
-  // Kein Timeout nötig (reine Postgres-Operation, kein Redis) – trotzdem in
+  // Kein Timeout nötig (reine Datenbank-Operation, kein Redis) – trotzdem in
   // try/catch: ein Chat ist ein Zusatznutzen nach der bereits erfolgreichen
   // Zahlung, ihr Fehlschlagen darf die Order-Erstellung nicht rückgängig
   // machen oder die Webhook-Antwort blockieren.

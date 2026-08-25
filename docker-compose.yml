@@ -9,16 +9,15 @@ services:
     env_file:
       - .env
     environment:
-      # DATABASE_URL wird bewusst hier aus den POSTGRES_*-Variablen
-      # zusammengesetzt (Ticket: "DATABASE_URL unverändert verwenden" – der
-      # App-Code liest weiterhin exakt process.env.DATABASE_URL, nur der
-      # WERT wird für den Container-Kontext automatisch auf den internen
-      # Postgres-Servicenamen gesetzt, statt ihn manuell doppelt in .env
-      # pflegen zu müssen). Ein evtl. in .env gesetzter roher DATABASE_URL-
-      # Wert (für lokale Entwicklung ohne Docker) wird hier bewusst
-      # überschrieben – `environment:` hat in Docker Compose Vorrang vor
-      # `env_file:`.
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      # DATABASE_URL wird bewusst hier aus den MARIADB_*-Variablen
+      # zusammengesetzt (der App-Code liest weiterhin exakt
+      # process.env.DATABASE_URL, nur der WERT wird für den
+      # Container-Kontext automatisch auf den internen MariaDB-
+      # Servicenamen gesetzt, statt ihn manuell doppelt in .env pflegen zu
+      # müssen). Ein evtl. in .env gesetzter roher DATABASE_URL-Wert (für
+      # lokale Entwicklung ohne Docker) wird hier bewusst überschrieben –
+      # `environment:` hat in Docker Compose Vorrang vor `env_file:`.
+      DATABASE_URL: mysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb:3306/${MARIADB_DATABASE}
       # Gleiches Prinzip für Redis: intern immer über den Servicenamen,
       # unabhängig vom REDIS_URL-Wert in .env (der für lokale Entwicklung
       # ohne Docker gilt).
@@ -27,7 +26,7 @@ services:
       - uploads_data:/app/public/uploads
       - invoices_data:/app/public/invoices
     depends_on:
-      postgres:
+      mariadb:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -37,23 +36,24 @@ services:
     # Kein Ports-Mapping nach außen ("Nur notwendige Ports freigeben") – der
     # App-Container ist ausschließlich über nginx erreichbar.
 
-  postgres:
-    image: postgres:16-alpine
+  mariadb:
+    image: mariadb:11
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_USER: ${MARIADB_USER}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
+      MARIADB_DATABASE: ${MARIADB_DATABASE}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mariadb_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
     expose:
-      - "5432"
+      - "3306"
 
   redis:
     image: redis:7-alpine
@@ -86,7 +86,7 @@ services:
       - certbot_certs:/etc/letsencrypt
 
 volumes:
-  postgres_data:
+  mariadb_data:
   uploads_data:
   invoices_data:
   certbot_webroot:

@@ -24,8 +24,8 @@ import { InsufficientInventoryError } from "./errors";
  * Listings (zwei parallele Stripe-Webhooks) könnten sonst beide denselben
  * quantity-Wert lesen, bevor eine der beiden ihr update() committet hat –
  * ein klassisches "Lost Update", das Bestand über den tatsächlichen Stand
- * hinaus verkaufen würde. Die atomare Variante lässt Postgres die
- * Bedingung gegen den jeweils aktuellen (gesperrten) Zeilenwert prüfen.
+ * hinaus verkaufen würde. Die atomare Variante lässt die Datenbank (InnoDB)
+ * die Bedingung gegen den jeweils aktuellen (gesperrten) Zeilenwert prüfen.
  */
 export async function updateInventory(orderId: string): Promise<void> {
   const orderItems = await prisma.orderItem.findMany({

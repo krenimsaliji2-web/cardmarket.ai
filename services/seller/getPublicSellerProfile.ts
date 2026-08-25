@@ -113,7 +113,9 @@ export async function getPublicSellerProfile(
     location: seller.location,
     country: seller.country,
     createdAt: seller.createdAt,
-    shippingCountries: seller.shippingCountries,
+    // Json statt natives Array (MariaDB-Umstellung, siehe prisma/schema.prisma),
+    // aber ausschließlich als String-Array geschrieben (updateSellerProfile.ts).
+    shippingCountries: seller.shippingCountries as string[],
     shippingTime: seller.shippingTime,
     responseTime: seller.responseTime,
     shopRules: seller.shopRules,

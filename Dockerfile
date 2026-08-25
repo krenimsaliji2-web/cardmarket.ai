@@ -4,8 +4,8 @@
 #
 # Debian "slim" statt Alpine: Prisma benötigt zur Laufzeit passende
 # OpenSSL-/glibc-Bibliotheken für seine Engine-Binaries (migrate/schema
-# engine – die Rust-Query-Engine selbst wird dank @prisma/adapter-pg NICHT
-# mehr benötigt, siehe lib/prisma.ts). Alpine (musl) erfordert dafür
+# engine – die Rust-Query-Engine selbst wird dank @prisma/adapter-mariadb
+# NICHT mehr benötigt, siehe lib/prisma.ts). Alpine (musl) erfordert dafür
 # zusätzliche, fehleranfällige `binaryTargets`-Konfiguration in
 # prisma/schema.prisma – das wollen wir nicht anfassen ("keine
 # Schemaänderungen", Ticket). Debian-slim funktioniert ohne solche
@@ -35,7 +35,7 @@ COPY . .
 # `prisma generate` braucht keine erreichbare Datenbank (liest nur das
 # Schema). `next build` ebenfalls nicht mehr, seit app/sitemap.ts explizit
 # `force-dynamic` ist (siehe dortiger Kommentar) – beides läuft hier ohne
-# Netzwerkzugriff auf den erst zur Laufzeit existierenden Postgres-Container.
+# Netzwerkzugriff auf den erst zur Laufzeit existierenden MariaDB-Container.
 RUN npx prisma generate
 RUN npm run build
 

@@ -20,7 +20,7 @@ Jede Tabelle beschreibt:
 - Indizes
 - Constraints
 
-Die Datenbank basiert auf PostgreSQL.
+Die Datenbank basiert auf MariaDB.
 
 Primärschlüssel verwenden UUID.
 
